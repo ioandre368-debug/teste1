@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I3O - Gestão de Assiduidade (Local)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { background-color: #020617; font-family: 'Inter', sans-serif; }
+        .i3o-card { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); border: 1px solid #1e293b; }
+        .btn-disabled { opacity: 0.2; cursor: not-allowed; pointer-events: none; filter: grayscale(1); }
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    </style>
+</head>
+<body class="text-slate-200">
+
+    <div id="login-page" class="flex items-center justify-center min-h-screen p-4">
+        <div class="i3o-card p-12 rounded-[2.5rem] w-full max-w-sm text-center shadow-2xl">
+            <h1 class="text-6xl font-black text-blue-600 italic mb-2 tracking-tighter">I3O</h1>
+            <p class="text-slate-500 text-[10px] mb-10 uppercase tracking-[0.4em] font-bold">Local Storage Mode</p>
+            <div class="space-y-4">
+                <input type="text" id="user" placeholder="Utilizador" class="w-full p-4 rounded-2xl bg-slate-900 border border-slate-700 outline-none focus:border-blue-600 text-white">
+                <input type="password" id="pass" placeholder="Palavra-passe" class="w-full p-4 rounded-2xl bg-slate-900 border border-slate-700 outline-none focus:border-blue-600 text-white">
+                <button onclick="login()" class="w-full bg-blue-600 hover:bg-blue-500 py-5 rounded-2xl font-bold uppercase tracking-widest text-xs mt-4">Entrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="dashboard" class="hidden">
+        <nav class="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/90 sticky top-0 z-50">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl font-black text-blue-600 italic">I3O</span>
+                <span id="role-badge" class="text-[9px] bg-blue-600/10 text-blue-400 border border-blue-600/20 px-2 py-0.5 rounded-full font-bold uppercase"></span>
+            </div>
+            <button onclick="location.reload()" class="text-red-500 text-xs font-black uppercase">Sair</button>
+        </nav>
+
+        <main class="p-6 lg:p-12 max-w-6xl mx-auto">
+            <div id="admin-view" class="hidden">
+                <div class="flex justify-between items-end mb-10">
+                    <h2 class="text-4xl font-black italic uppercase tracking-tighter">Registos</h2>
+                    <div class="flex gap-3 bg-slate-900 p-3 rounded-2xl border border-slate-800">
+                        <input type="date" id="filtro-data" onchange="renderizarTabela()" class="bg-transparent text-blue-400 font-bold outline-none">
+                        <button onclick="exportarExcel()" class="bg-emerald-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase">Excel</button>
+                    </div>
+                </div>
+                <div class="i3o-card rounded-[2.5rem] overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-900/80 text-slate-500 text-[10px] uppercase font-black">
+                            <tr><th class="p-6">Colaborador</th><th class="p-6">Estado</th><th class="p-6 text-center">Entrada</th><th class="p-6 text-center">Saída</th><th class="p-6 text-center">Data</th></tr>
+                        </thead>
+                        <tbody id="tabela-corpo"></tbody>
+                    </table>
+                </div>
+                <button onclick="limparTudo()" class="mt-8 text-red-900 text-[10px] font-black uppercase hover:text-red-600">Apagar Local Storage</button>
+            </div>
+
+            <div id="colab-view" class="hidden text-center">
+                <div class="i3o-card p-16 rounded-[4rem] inline-block w-full max-w-lg">
+                    <div id="clock" class="text-8xl font-mono font-black mb-12 italic tracking-tighter">00:00:00</div>
+                    <div class="grid grid-cols-2 gap-6">
+                        <button id="btn-entrada" onclick="baterPonto('ENTRADA')" class="py-10 bg-emerald-600 rounded-[2rem] font-black text-xl">ENTRADA</button>
+                        <button id="btn-saida" onclick="baterPonto('SAÍDA')" class="py-10 bg-rose-600 rounded-[2rem] font-black text-xl">SAÍDA</button>
+                    </div>
+                    <p id="status-msg" class="text-slate-500 text-[10px] mt-10 font-black uppercase tracking-[0.3em]">Sistema Local Ativo</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let sessao = null;
+        const DB_KEY = 'i3o_ponto_local_db';
+
+        // Relógio
+        setInterval(() => {
+            document.getElementById('clock').innerText = new Date().toLocaleTimeString('pt-PT');
+        }, 1000);
+
+        window.onload = () => {
+            document.getElementById('filtro-data').value = new Date().toISOString().split('T')[0];
+        };
+
+        function login() {
+            const u = document.getElementById('user').value.trim().toLowerCase();
+            const p = document.getElementById('pass').value;
+            
+            const equipa = {
+                "123": { nome: "Pedro Pereira", role: "ADMIN", pass: "123" },
+                "carlos": { nome: "Carlos Gomes", role: "USER", pass: "123" },
+                "andre": { nome: "André Silva", role: "USER", pass: "123" },
+                "eurico": { nome: "Eurico Mota", role: "USER", pass: "123" },
+                "luis": { nome: "Luís Pedro", role: "USER", pass: "123" },
+                "eliana": { nome: "Eliana", role: "USER", pass: "123" },
+                "ana": { nome: "Ana Ramalho", role: "USER", pass: "123" },
+                "antonio": { nome: "António Pereira", role: "USER", pass: "123" }
+            };
+
+            if(equipa[u] && equipa[u].pass === p) {
+                sessao = equipa[u];
+                document.getElementById('login-page').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                document.getElementById('role-badge').innerText = sessao.role;
+
+                if(sessao.role === 'ADMIN') {
+                    document.getElementById('admin-view').classList.remove('hidden');
+                    renderizarTabela();
+                } else {
+                    document.getElementById('colab-view').classList.remove('hidden');
+                    atualizarBotoes();
+                }
+            } else { alert("Acesso Negado."); }
+        }
+
+        function baterPonto(tipo) {
+            const db = JSON.parse(localStorage.getItem(DB_KEY) || '[]');
+            db.push({
+                nome: sessao.nome,
+                tipo: tipo,
+                data: new Date().toLocaleDateString('pt-PT'),
+                dataISO: new Date().toISOString().split('T')[0],
+                hora: new Date().toLocaleTimeString('pt-PT'),
+                ts: Date.now()
+            });
+            localStorage.setItem(DB_KEY, JSON.stringify(db));
+            alert(tipo + " registada no navegador!");
+            atualizarBotoes();
+        }
+
+        function atualizarBotoes() {
+            const db = JSON.parse(localStorage.getItem(DB_KEY) || '[]');
+            const hoje = new Date().toLocaleDateString('pt-PT');
+            const meusHoje = db.filter(x => x.nome === sessao.nome && x.data === hoje);
+            const ultimo = meusHoje[meusHoje.length - 1];
+
+            const bE = document.getElementById('btn-entrada'), bS = document.getElementById('btn-saida');
+            if (!ultimo || ultimo.tipo === 'SAÍDA') {
+                bE.classList.remove('btn-disabled'); bS.classList.add('btn-disabled');
+            } else {
+                bE.classList.add('btn-disabled'); bS.classList.remove('btn-disabled');
+            }
+        }
+
+        function renderizarTabela() {
+            const filtro = document.getElementById('filtro-data').value;
+            const db = JSON.parse(localStorage.getItem(DB_KEY) || '[]');
+            const filtrados = db.filter(x => x.dataISO === filtro);
+            
+            // Agrupar por nome para mostrar Entrada e Saída na mesma linha
+            const agrupar = {};
+            filtrados.forEach(r => {
+                if(!agrupar[r.nome]) agrupar[r.nome] = { nome: r.nome, entrada: '--:--', saida: '--:--', data: r.data };
+                if(r.tipo === 'ENTRADA') agrupar[r.nome].entrada = r.hora;
+                if(r.tipo === 'SAÍDA') agrupar[r.nome].saida = r.hora;
+            });
+
+            document.getElementById('tabela-corpo').innerHTML = Object.values(agrupar).map(r => `
+                <tr class="border-b border-slate-900/50">
+                    <td class="p-6 font-black uppercase text-white">${r.nome}</td>
+                    <td class="p-6"><span class="text-[8px] bg-blue-500/10 text-blue-400 p-1 rounded font-bold">REGISTADO</span></td>
+                    <td class="p-6 text-center text-emerald-400 font-mono font-bold">${r.entrada}</td>
+                    <td class="p-6 text-center text-rose-400 font-mono font-bold">${r.saida}</td>
+                    <td class="p-6 text-center text-slate-500 text-xs">${r.data}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" class="p-10 text-center">Sem dados locais hoje</td></tr>';
+        }
+
+        function exportarExcel() {
+            const filtro = document.getElementById('filtro-data').value;
+            const db = JSON.parse(localStorage.getItem(DB_KEY) || '[]');
+            const dados = db.filter(x => x.dataISO === filtro);
+            let csv = "NOME;TIPO;HORA;DATA\n";
+            dados.forEach(r => csv += `${r.nome};${r.tipo};${r.hora};${r.data}\n`);
+            const blob = new Blob(["\ufeff", csv], { type: 'text/csv' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `I3O_PONTO_${filtro}.csv`;
+            link.click();
+        }
+
+        function limparTudo() {
+            if(confirm("Apagar todos os dados deste computador?")) {
+                localStorage.removeItem(DB_KEY);
+                renderizarTabela();
+            }
+        }
+    </script>
+</body>
+</html>
